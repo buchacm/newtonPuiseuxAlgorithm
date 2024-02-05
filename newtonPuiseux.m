@@ -218,7 +218,7 @@ onLineQ[point1_, point2_, vector_] :=Module[{a},
 roots[poly_,var_]:=Root[poly/.var->#&,#]&/@Range[Exponent[poly,var]];
 
 
-expand[poly_,vars_]:=
+(*expand[poly_,vars_]:=
 (* computes the expansion of a polynomial whose coefficients are algebraic numbers *)
 Module[{polyT,T,exps,rules,el,p,u,i,j},
 
@@ -235,7 +235,50 @@ polyT=polyT/.Thread[vars->vars^T];
 
 polyT=Assuming[And@@Thread[vars>=0],Simplify[polyT]];
 
+
 rules=CoefficientRules[polyT,Join[vars,vars^(-1)]];
+
+Do[
+el=rules[[i]];
+p={el[[2]]};
+p=Replace[p,Plus->Sequence,{2},Heads->True];
+Print["here"];
+Print[p];
+p=RootReduce[Plus@@ToNumberField[p]];
+rules[[i]][[2]]=p;
+,{i,1,Length[rules]}];
+
+Return[FromCoefficientRules[rules,Join[vars,vars^(-1)]]/.Thread[vars->vars^(1/T)]/.(u_^i_)^j_->u^(i j)]
+];*)
+
+
+expand[poly_,vars_]:=
+(* computes the expansion of a polynomial *)
+Module[{polyT,T,exps,rules,el,p,u,i,j,num,denom,monom,exp,coeff,output,polyNoDenom,m,monomials},
+
+polyT=poly;
+
+T={};
+exps=Exponents[poly,vars];
+
+
+Do[
+AppendTo[T,Quiet[LCM@@(Denominator[#]&/@(#[[i]]&/@exps))]]
+,{i,1,Length[vars]}];
+
+
+polyT=polyT/.Thread[vars->vars^T];
+
+polyT=Assuming[And@@Thread[vars>=0],Simplify[polyT]];
+
+polyT=Together[polyT];
+denom=Denominator[polyT];
+
+m=Times@@(vars^Exponent[denom,vars]);
+
+polyNoDenom=Expand[polyT*m];
+
+rules=CoefficientRules[polyNoDenom,vars];
 
 Do[
 el=rules[[i]];
@@ -245,8 +288,53 @@ p=RootReduce[Plus@@ToNumberField[p]];
 rules[[i]][[2]]=p;
 ,{i,1,Length[rules]}];
 
-Return[FromCoefficientRules[rules,Join[vars,vars^(-1)]]/.Thread[vars->vars^(1/T)]/.(u_^i_)^j_->u^(i j)]
+Return[FromCoefficientRules[rules,vars]/.Thread[vars->vars^(1/T)]/.(u_^i_)^j_->u^(i j)]
 ];
+
+(*
+monomials=FullSimplify[MonomialList[polyNoDenom,vars]]/m;
+
+output=Plus@@(monomials/.Thread[vars->vars^(1/T)]/.(u_^i_)^j_->u^(i j));
+(*Print[output];*)
+
+Return[output]
+]*)
+
+
+(*expand[poly_,vars_]:=
+(* computes the expansion of a polynomial *)
+Module[{polyT,T,exps,rules,el,p,u,i,j,num,denom,monom,exp,coeff,output,polyNoDenom,m,monomials},
+
+polyT=poly;
+
+T={};
+exps=Exponents[poly,vars];
+
+
+Do[
+AppendTo[T,Quiet[LCM@@(Denominator[#]&/@(#[[i]]&/@exps))]]
+,{i,1,Length[vars]}];
+
+
+polyT=polyT/.Thread[vars->vars^T];
+
+polyT=Assuming[And@@Thread[vars>=0],Simplify[polyT]];
+
+polyT=Together[polyT];
+denom=Denominator[polyT];
+
+m=Times@@(vars^Exponent[denom,vars]);
+
+polyNoDenom=Expand[polyT*m];
+
+monomials=FullSimplify[MonomialList[polyNoDenom,vars]]/m;
+
+output=Plus@@(monomials/.Thread[vars->vars^(1/T)]/.(u_^i_)^j_->u^(i j));
+(*Print[output];*)
+
+Return[output]
+]
+*)
 
 
 slope[edge_, 
@@ -399,9 +487,9 @@ series[poly_, vars_, edge_, w_,
  (* computes the series solutions with respect to a \
 given edge and total order on the exponents up to a given order + cones that contain their tails *)
  
- Module[{outputOld,outputold,lastT,n,P,counter,monomialList,coefficientList,output, output1, terms, newsol, path},
+ Module[{outputFinal,outputOld,outputold,lastT,n,P,counter,monomialList,coefficientList,output, output1, terms, newsol, path},
 
-
+outputFinal={};
 counter=0;
 (* w has to be in the dual of the barrier cone of edge *)
 (* Print["barrierCone: ",barrierCone[NewtonPolytope[poly,vars],edge]];
@@ -413,34 +501,43 @@ If[Or@@Thread[w . #&/@barrierCone[NewtonPolytope[poly,vars],edge]>0],Throw["tota
 monomialList={};
 coefficientList={};
 
-(* output besteht aus einer Liste von Paaren bestehend aus 
-der Reihenentwicklung einer Nullstelle bis zu einer gewissen Ordnung und 
-einer Kante zur Berechnung des n\[ADoubleDot]chsten Terms *)
+(* outputs a list of pairs consisting of a series root up to a certain order and 
+an edge for computing the next term *)
+
 output = {{0, edge}};
  
 
  n=Abs[Last[edge[[1]]]-Last[edge[[2]]]];
  
   While[
-  (counter==0 && (counter<order || Length[output]<n+1))||
-  (counter>0 && (counter<order || Length[output]<n)),
-
+  (* compute n many series solutions up to order order *)
+  counter==0 || (counter>0 && (counter<order || Length[output]<n)),
+  
    counter=counter+1;
-  (*  was ist output1? die Liste der n\[ADoubleDot]chsten Terme + Kanten *)
+  
+  (* output1 is the list of next terms plus the corresponding edges*)
    output1 = {};
   
    Do[
   
+  (* if the j-th truncated sequence is a solution of the equation 
+     this is indicated by output[[j]][[2]]===-1; in that case we there is 
+     no further term to compute an we append to output1 the pair the 
+     pair consisting of the series solution and -1
+    *)
    If[output[[j]][[2]]===-1, AppendTo[output1,{output[[j]][[1]],-1}],
     
+    (* however, if this is not the case, then we compute the next term *)
     terms = nextTerm[
       expand[poly /. Last[vars] -> Last[vars] + output[[j]][[1]],vars], 
       vars, output[[j]][[2]]];
    
+   (* and add it to the truncation of the series solution *)
     newsol = {output[[j]][[1]] + #[[1]], #[[2]], output[[j]][[2]]} & /@
        terms;   
        
-    
+    (* finally we determine the edges for the computation of the next term *)
+  
     newsol =
      Flatten[Tuples[{{#[[1]]}, 
            If[expand[poly /. Last[vars] -> #[[1]],vars]===0,{-1},
@@ -457,11 +554,14 @@ output = {{0, edge}};
    output = output1;
    ];
    
-   lastT[sum_,v_]:=Module[{list},
+   (*lastT[sum_,v_]:=Module[{list},
    list=Exponents[sum,v];
    Return[Times@@(v^Last[list])]
-   ];
+   ];*)
   
+(* take outputOld and duplicate certain entries according to their multiplicity 
+   given by the length of the projection of the edge that gives the exponents of the 
+   next term *)
 outputold={};
 Do[
 Do[
@@ -473,14 +573,20 @@ AppendTo[outputold,outputOld[[i]]]
 
 
   Do[
+  
+  
 
-  P=NewtonPolytope[poly/.Last[vars]->outputold[[i]][[1]]+Last[vars],vars];
+  P=NewtonPolytope[expand[poly/.Last[vars]->outputold[[i]][[1]]+Last[vars],vars],vars];
   
   output[[i]][[2]]=If[output[[i]][[2]]===-1,{Table[0,Length[vars]-1]},barrierCone[P,outputold[[i]][[2]]]];
   (* Print[outputold[[i]][[2]]] *)
   ,{i,1,Length[output]}];
   
-  Return[output]
+	Do[
+	AppendTo[outputFinal,{expand[output[[i]][[1]],vars],output[[i]][[2]]}]
+	,{i,1,Length[output]}];
+  
+  Return[outputFinal]
   ];
 
 
