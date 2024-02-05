@@ -254,7 +254,7 @@ Return[FromCoefficientRules[rules,Join[vars,vars^(-1)]]/.Thread[vars->vars^(1/T)
 
 expand[poly_,vars_]:=
 (* computes the expansion of a polynomial *)
-Module[{polyT,T,exps,rules,el,p,u,i,j,num,denom,monom,exp,coeff,output,polyNoDenom,m,monomials},
+Module[{vector,polyT,T,exps,rules,el,p,u,i,j,num,denom,monom,exp,coeff,output,polyNoDenom,m,monomials},
 
 polyT=poly;
 
@@ -274,7 +274,8 @@ polyT=Assuming[And@@Thread[vars>=0],Simplify[polyT]];
 polyT=Together[polyT];
 denom=Denominator[polyT];
 
-m=Times@@(vars^Exponent[denom,vars]);
+vector=Exponent[denom,vars];
+m=Times@@(vars^vector);
 
 polyNoDenom=Expand[polyT*m];
 
@@ -286,19 +287,12 @@ p={el[[2]]};
 p=Replace[p,Plus->Sequence,{2},Heads->True];
 p=RootReduce[Plus@@ToNumberField[p]];
 rules[[i]][[2]]=p;
+rules[[i]][[1]]=rules[[i]][[1]]-vector;
 ,{i,1,Length[rules]}];
 
-Return[FromCoefficientRules[rules,vars]/.Thread[vars->vars^(1/T)]/.(u_^i_)^j_->u^(i j)]
+Return[(FromCoefficientRules[rules,vars])/.Thread[vars->vars^(1/T)]/.(u_^i_)^j_->u^(i j)]
 ];
 
-(*
-monomials=FullSimplify[MonomialList[polyNoDenom,vars]]/m;
-
-output=Plus@@(monomials/.Thread[vars->vars^(1/T)]/.(u_^i_)^j_->u^(i j));
-(*Print[output];*)
-
-Return[output]
-]*)
 
 
 (*expand[poly_,vars_]:=
